@@ -1,1 +1,11 @@
-[]
+{
+  "days": {},
+  "format": "fixnet-refs-v2",
+  "max_new_entries_per_day": 1000000000,
+  "shard_width": 31250000,
+  "shards_per_day": 32,
+  "total_days": 0,
+  "total_entries": 0,
+  "updated_at": null,
+  "version": 2
+}
