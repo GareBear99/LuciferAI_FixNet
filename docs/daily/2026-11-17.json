@@ -1,0 +1,39 @@
+{
+  "counts": {
+    "checked": 1,
+    "expired": 0,
+    "not_verified": 0,
+    "pending": 0,
+    "verified": 1
+  },
+  "date": "2026-11-17",
+  "deposit": {
+    "entries": [
+      {
+        "id": "profile-90bb826f-4fc6-4444-9da5-65e66b976279",
+        "snapshot_access": true,
+        "sp": 1000,
+        "tick": 1
+      }
+    ],
+    "overflow_queued": false,
+    "sp_per_verified": 1000
+  },
+  "format": "fixnet-daily-v1",
+  "generated_at": "2026-11-17T12:38:03.698430Z",
+  "status": [
+    {
+      "day": "2026-11-17",
+      "id": "profile-90bb826f-4fc6-4444-9da5-65e66b976279",
+      "outcome": "verified",
+      "reason": "genesis_root",
+      "tick": 1
+    }
+  ],
+  "yield": {
+    "corpus_entries_today": null,
+    "corpus_total_entries": 0,
+    "verified_today": 1,
+    "verified_total": 1
+  }
+}
