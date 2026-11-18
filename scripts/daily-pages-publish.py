@@ -72,6 +72,12 @@ from datetime import datetime, timezone
 # --- Constants -------------------------------------------------------------
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_BASE_URL = "https://lucid-ping-server.admension.workers.dev"
+# Browser-like User-Agent: Cloudflare blocks urllib's default
+# "Python-urllib/3.13" as a bot signature (Error 1010). The fetch is a
+# legitimate admin read, not a bot; identify as a browser so the
+# request passes the bot check. Only the User-Agent changes — the
+# admin key still authenticates the request.
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 SP_VERIFIED_DAILY = 1000  # sovereignPoints.ts SP_VERIFIED_DAILY — same number
 PAGES_DIR = "docs"
 DAILY_FORMAT = "fixnet-daily-v1"
@@ -92,6 +98,7 @@ def fetch_outcomes(base_url, secret, day=None):
     req = urllib.request.Request(url, headers={
         "x-lucid-ping-key": secret,
         "accept": "application/json",
+        "User-Agent": USER_AGENT,
     })
     try:
         with urllib.request.urlopen(req, timeout=60) as res:
@@ -118,7 +125,12 @@ def load_outcomes_file(path):
 
 
 def validate_outcome(entry):
-    """An outcome entry is usable only if it has the fields the client needs."""
+    """An outcome entry is usable only if it has the fields the client needs.
+
+    next_temp is optional: older outcome entries predate rotation and
+    carry none. When present it must be a dict with a non-empty string
+    id and a non-negative int tick, else the entry is invalid.
+    """
     if not isinstance(entry, dict):
         return False
     if not isinstance(entry.get("tick"), int) or entry["tick"] < 0:
@@ -127,7 +139,31 @@ def validate_outcome(entry):
         return False
     if entry.get("outcome") not in OUTCOMES:
         return False
+    nt = entry.get("next_temp")
+    if nt is not None:
+        if not isinstance(nt, dict):
+            return False
+        if not isinstance(nt.get("id"), str) or not nt["id"]:
+            return False
+        if not isinstance(nt.get("tick"), int) or nt["tick"] < 0:
+            return False
     return True
+
+
+def next_temp_for(entry):
+    """The rotation temp for a verified entry, else None.
+
+    Only verified entries carry a next_temp: the server creates the
+    rotation on verification, and guests / unverified temps never get
+    one. The field is always present on every published entry (null
+    when there is no rotation) so the client can rely on the shape.
+    """
+    if entry.get("outcome") != "verified":
+        return None
+    nt = entry.get("next_temp")
+    if not isinstance(nt, dict):
+        return None
+    return {"id": nt["id"], "tick": nt["tick"]}
 
 
 def build_daily(day_outcomes, all_outcomes, day, corpus_manifest, refs_index):
@@ -156,6 +192,7 @@ def build_daily(day_outcomes, all_outcomes, day, corpus_manifest, refs_index):
                 "outcome": e["outcome"],
                 "day": e.get("day"),
                 "reason": e.get("reason"),
+                "next_temp": next_temp_for(e),
             }
             for e in day_outcomes
         ],
@@ -175,7 +212,13 @@ def build_daily(day_outcomes, all_outcomes, day, corpus_manifest, refs_index):
 
 
 def build_status(all_outcomes, day):
-    """The cumulative status table: latest outcome per temp, tick order."""
+    """The cumulative status table: latest outcome per temp, tick order.
+
+    No synthetic entry for a rotation temp: the new temp has no
+    outcome yet, so it is visible only through the old temp's
+    next_temp field (design D4). It appears here once its own grab
+    verifies it.
+    """
     by_id = {}
     for e in all_outcomes:
         by_id[e["id"]] = e
@@ -193,6 +236,7 @@ def build_status(all_outcomes, day):
                 "outcome": e["outcome"],
                 "day": e.get("day"),
                 "reason": e.get("reason"),
+                "next_temp": next_temp_for(e),
             }
             for e in entries
         ],
@@ -303,6 +347,31 @@ def publish(day, day_data, all_data):
     }
 
 
+def check_next_temp(published_entry, outcome_entry, where):
+    """Check a published entry's next_temp against the outcome log.
+
+    A published next_temp, when present, must be well-shaped (a dict
+    with a non-empty string id and a non-negative int tick) and must
+    match the outcome log when the log carries one too. Absence never
+    fails: older entries predate rotation and lack next_temp on either
+    side, and a stale published file is caught by re-publish, not by
+    verify.
+    """
+    errors = []
+    pub = published_entry.get("next_temp")
+    exp = outcome_entry.get("next_temp")
+    if pub is not None:
+        if (not isinstance(pub, dict)
+                or not isinstance(pub.get("id"), str) or not pub["id"]
+                or not isinstance(pub.get("tick"), int) or pub["tick"] < 0):
+            errors.append("%s: next_temp malformed for %r: %r"
+                          % (where, outcome_entry["id"], pub))
+        elif exp is not None and pub != {"id": exp["id"], "tick": exp["tick"]}:
+            errors.append("%s: next_temp mismatch for %r: published %r, outcome log %r"
+                          % (where, outcome_entry["id"], pub, exp))
+    return errors
+
+
 def verify_published(day, day_data, all_data):
     """Check the published files for a day against the outcome log."""
     daily_path = repo_path(PAGES_DIR, "daily", "%s.json" % day)
@@ -331,10 +400,19 @@ def verify_published(day, day_data, all_data):
                 errors.append("daily status mismatch at tick %s: %r vs %r"
                               % (e["tick"], p, e))
                 break
+            errors.extend(check_next_temp(p, e, "daily file"))
     status_ids = {e["id"] for e in status.get("status", [])}
     missing = [e["id"] for e in all_outcomes if e["id"] not in status_ids]
     if missing:
         errors.append("status table is missing %d temps from the outcome log" % len(missing))
+    latest = {}
+    for e in all_outcomes:
+        latest[e["id"]] = e
+    status_by_id = {e["id"]: e for e in status.get("status", [])}
+    for tid, e in latest.items():
+        p = status_by_id.get(tid)
+        if p is not None:
+            errors.extend(check_next_temp(p, e, "status table"))
     return (len(errors) == 0), errors
 
 

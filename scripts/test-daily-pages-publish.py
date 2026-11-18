@@ -61,6 +61,133 @@ def read_json(path):
         return json.load(f)
 
 
+def fixture_outcomes_with_rotation():
+    """A grab-outcomes response with rotation temps: one verified temp
+    already rotated (yesterday's root), one verified today with no
+    rotation yet, one pending temp whose log row spuriously carries a
+    next_temp (only verified entries may carry one)."""
+    return {
+        "ok": True,
+        "grabDay": "2026-11-17",
+        "outcomes": [
+            {"tick": 1, "id": "profile-root", "outcome": "verified",
+             "day": "2026-11-16", "reason": "genesis_root",
+             "next_temp": {"id": "profile-rot-1", "tick": 10}},
+            {"tick": 2, "id": "profile-child", "outcome": "verified",
+             "day": "2026-11-17", "reason": "chain_holds"},
+            {"tick": 3, "id": "profile-waiting", "outcome": "pending",
+             "day": "2026-11-17", "reason": "referrer_pending",
+             "next_temp": {"id": "profile-rot-9", "tick": 11}},
+        ],
+    }
+
+
+def test_next_temp_carried_on_verified_entries():
+    tmp = tempfile.mkdtemp(prefix="fixnet-pages-")
+    try:
+        PUBLISH.REPO_ROOT = tmp
+        all_data = fixture_outcomes_with_rotation()
+        day_data = day_outcomes(all_data, "2026-11-17")
+        PUBLISH.publish("2026-11-17", day_data, all_data)
+
+        daily = read_json(os.path.join(tmp, "docs", "daily", "2026-11-17.json"))
+        by_id = {e["id"]: e for e in daily["status"]}
+        # Verified today, no rotation yet: the field is present, null.
+        assert by_id["profile-child"]["next_temp"] is None, by_id["profile-child"]
+        # Pending: never carries a next_temp, even though the log row had one.
+        assert by_id["profile-waiting"]["next_temp"] is None, by_id["profile-waiting"]
+
+        status = read_json(os.path.join(tmp, "docs", "daily", "status.json"))
+        by_id = {e["id"]: e for e in status["status"]}
+        # The rotated root carries its rotation temp.
+        assert by_id["profile-root"]["next_temp"] == {
+            "id": "profile-rot-1", "tick": 10}, by_id["profile-root"]
+        assert by_id["profile-child"]["next_temp"] is None
+        assert by_id["profile-waiting"]["next_temp"] is None
+        # No synthetic entry for the rotation temp itself: it has no
+        # outcome yet, so it is visible only via the old temp's field.
+        assert status["temps"] == 3
+        assert "profile-rot-1" not in by_id
+        assert "profile-rot-9" not in by_id
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_validate_outcome_next_temp():
+    base = {"tick": 1, "id": "profile-x", "outcome": "verified",
+            "day": "2026-11-17", "reason": "chain_holds"}
+    # Absent (older entries predate rotation) and explicit null: valid.
+    assert PUBLISH.validate_outcome(base)
+    assert PUBLISH.validate_outcome(dict(base, next_temp=None))
+    # Valid rotations, including tick 0.
+    assert PUBLISH.validate_outcome(
+        dict(base, next_temp={"id": "profile-y", "tick": 5}))
+    assert PUBLISH.validate_outcome(
+        dict(base, next_temp={"id": "profile-y", "tick": 0}))
+    # Invalid: not a dict, empty/non-string/missing id, negative/non-int/missing tick.
+    for bad_nt in [
+        "profile-y",
+        {"id": "", "tick": 5},
+        {"id": 7, "tick": 5},
+        {"tick": 5},
+        {"id": "profile-y", "tick": -1},
+        {"id": "profile-y", "tick": "5"},
+        {"id": "profile-y"},
+    ]:
+        assert not PUBLISH.validate_outcome(dict(base, next_temp=bad_nt)), bad_nt
+
+
+def test_verify_published_next_temp():
+    tmp = tempfile.mkdtemp(prefix="fixnet-pages-")
+    try:
+        PUBLISH.REPO_ROOT = tmp
+        all_data = fixture_outcomes_with_rotation()
+        day_data = day_outcomes(all_data, "2026-11-17")
+        PUBLISH.publish("2026-11-17", day_data, all_data)
+        ok, errors = PUBLISH.verify_published("2026-11-17", day_data, all_data)
+        assert ok, errors
+
+        daily_path = os.path.join(tmp, "docs", "daily", "2026-11-17.json")
+        status_path = os.path.join(tmp, "docs", "daily", "status.json")
+
+        # A malformed next_temp in the daily file fails verify.
+        tampered = read_json(daily_path)
+        tampered["status"][0]["next_temp"] = {"id": "", "tick": 10}
+        with open(daily_path, "w", encoding="utf-8") as f:
+            json.dump(tampered, f)
+        ok, errors = PUBLISH.verify_published("2026-11-17", day_data, all_data)
+        assert not ok and errors, "verify should fail on a malformed next_temp"
+        PUBLISH.publish("2026-11-17", day_data, all_data)
+
+        # A next_temp that disagrees with the outcome log fails verify.
+        tampered = read_json(status_path)
+        for e in tampered["status"]:
+            if e["id"] == "profile-root":
+                e["next_temp"] = {"id": "profile-other", "tick": 10}
+        with open(status_path, "w", encoding="utf-8") as f:
+            json.dump(tampered, f)
+        ok, errors = PUBLISH.verify_published("2026-11-17", day_data, all_data)
+        assert not ok and errors, "verify should fail on a next_temp mismatch"
+        PUBLISH.publish("2026-11-17", day_data, all_data)
+
+        # An old-style published file with no next_temp key at all still
+        # verifies: absence never fails (older entries lack it).
+        tampered = read_json(daily_path)
+        for e in tampered["status"]:
+            e.pop("next_temp", None)
+        with open(daily_path, "w", encoding="utf-8") as f:
+            json.dump(tampered, f)
+        tampered = read_json(status_path)
+        for e in tampered["status"]:
+            e.pop("next_temp", None)
+        with open(status_path, "w", encoding="utf-8") as f:
+            json.dump(tampered, f)
+        ok, errors = PUBLISH.verify_published("2026-11-17", day_data, all_data)
+        assert ok, errors
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_publish_writes_the_daily_channel():
     tmp = tempfile.mkdtemp(prefix="fixnet-pages-")
     try:
@@ -211,6 +338,12 @@ check("publish writes the daily channel (daily file, status table, latest, index
       test_publish_writes_the_daily_channel)
 check("publish is idempotent and --verify passes (and catches tampering)",
       test_publish_is_idempotent_and_verify_passes)
+check("next_temp is carried on verified entries only (null otherwise, no synthetic entry)",
+      test_next_temp_carried_on_verified_entries)
+check("validate_outcome accepts absent/null/valid next_temp and rejects malformed ones",
+      test_validate_outcome_next_temp)
+check("verify_published checks next_temp shape and match, but never fails on absence",
+      test_verify_published_next_temp)
 check("invalid outcomes are skipped, never published",
       test_invalid_outcomes_are_skipped_not_published)
 check("corpus numbers come from the manifest when present",
