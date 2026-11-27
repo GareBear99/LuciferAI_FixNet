@@ -1,0 +1,60 @@
+{
+  "counts": {
+    "checked": 2,
+    "expired": 0,
+    "not_verified": 0,
+    "pending": 0,
+    "verified": 2
+  },
+  "date": "2026-11-27",
+  "deposit": {
+    "entries": [
+      {
+        "id": "profile-acf69562-554c-46be-93a6-5ec073e9826d",
+        "snapshot_access": true,
+        "sp": 1000,
+        "tick": 9
+      },
+      {
+        "id": "profile-d61522b3-34b9-4f5b-acf2-288b42bd346c",
+        "snapshot_access": true,
+        "sp": 1000,
+        "tick": 11
+      }
+    ],
+    "overflow_queued": false,
+    "sp_per_verified": 1000
+  },
+  "format": "fixnet-daily-v1",
+  "generated_at": "2026-11-27T08:45:20.487410Z",
+  "status": [
+    {
+      "day": "2026-11-27",
+      "id": "profile-acf69562-554c-46be-93a6-5ec073e9826d",
+      "next_temp": {
+        "id": "profile-e579e4ed-9152-4e4f-bd92-295a4d5ab0c7",
+        "tick": 10
+      },
+      "outcome": "verified",
+      "reason": "already_verified",
+      "tick": 9
+    },
+    {
+      "day": "2026-11-27",
+      "id": "profile-d61522b3-34b9-4f5b-acf2-288b42bd346c",
+      "next_temp": {
+        "id": "profile-569e68c3-e40d-4783-af3d-cbbe8d1ecb39",
+        "tick": 12
+      },
+      "outcome": "verified",
+      "reason": "chain_holds",
+      "tick": 11
+    }
+  ],
+  "yield": {
+    "corpus_entries_today": null,
+    "corpus_total_entries": 0,
+    "verified_today": 2,
+    "verified_total": 11
+  }
+}
