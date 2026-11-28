@@ -1,7 +1,7 @@
 {
-  "date": "2026-11-27",
+  "date": "2026-11-28",
   "format": "fixnet-status-v1",
-  "generated_at": "2026-11-27T08:45:20.487606Z",
+  "generated_at": "2026-11-28T08:43:15.896582Z",
   "status": [
     {
       "day": "2026-11-20",
@@ -103,14 +103,14 @@
       "tick": 9
     },
     {
-      "day": "2026-11-26",
+      "day": "2026-11-28",
       "id": "profile-e579e4ed-9152-4e4f-bd92-295a4d5ab0c7",
       "next_temp": {
         "id": "profile-d61522b3-34b9-4f5b-acf2-288b42bd346c",
         "tick": 11
       },
       "outcome": "verified",
-      "reason": "chain_holds",
+      "reason": "already_verified",
       "tick": 10
     },
     {
@@ -123,8 +123,19 @@
       "outcome": "verified",
       "reason": "chain_holds",
       "tick": 11
+    },
+    {
+      "day": "2026-11-28",
+      "id": "profile-569e68c3-e40d-4783-af3d-cbbe8d1ecb39",
+      "next_temp": {
+        "id": "profile-e9837376-4d98-4656-ad30-dc515993973e",
+        "tick": 13
+      },
+      "outcome": "verified",
+      "reason": "chain_holds",
+      "tick": 12
     }
   ],
-  "temps": 11,
-  "verified": 11
+  "temps": 12,
+  "verified": 12
 }
